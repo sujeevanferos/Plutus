@@ -47,14 +47,37 @@ class _MyAppState extends State<MyApp> {
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF006064),
+        brightness: Brightness.dark,
+        colorScheme: const ColorScheme.dark(
           brightness: Brightness.dark,
+          primary: Colors.white,
+          onPrimary: Colors.black,
+          primaryContainer: Color(0xFF1E1E1E),
+          onPrimaryContainer: Colors.white,
+          secondary: Color(0xFF9E9E9E),
+          onSecondary: Colors.black,
+          secondaryContainer: Color(0xFF2C2C2C),
+          onSecondaryContainer: Colors.white,
+          surface: Color(0xFF000000),
+          onSurface: Colors.white,
+          surfaceContainerHighest: Color(0xFF1E1E1E),
+          error: Color(0xFFBDBDBD),
+          onError: Colors.black,
+          outline: Color(0xFF424242),
         ),
         textTheme: GoogleFonts.interTextTheme(
           Theme.of(context).textTheme,
         ).apply(bodyColor: Colors.white, displayColor: Colors.white),
-        scaffoldBackgroundColor: const Color(0xFF121212),
+        scaffoldBackgroundColor: const Color(0xFF000000),
+        cardColor: const Color(0xFF1E1E1E),
+        dividerColor: const Color(0xFF424242),
+        iconTheme: const IconThemeData(color: Colors.white),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF000000),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          iconTheme: IconThemeData(color: Colors.white),
+        ),
       ),
       home: PlutusHome(toggleTheme: _toggleTheme, currentThemeMode: _themeMode),
     );
@@ -428,14 +451,23 @@ User Question: $question
         children: [
           Card(
             elevation: 2,
-            color: Theme.of(context).colorScheme.primary,
+            color:
+                Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF2C2C2C)
+                    : Theme.of(context).colorScheme.primary,
             child: Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
                 children: [
-                  const Text(
+                  Text(
                     'Net Balance',
-                    style: TextStyle(color: Colors.white70, fontSize: 16),
+                    style: TextStyle(
+                      color:
+                          Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[400]
+                              : Colors.white70,
+                      fontSize: 16,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -590,13 +622,18 @@ User Question: $question
                     leading: CircleAvatar(
                       backgroundColor:
                           t.type == 'Income'
-                              ? Colors.green.withValues(alpha: 0.2)
-                              : Colors.red.withValues(alpha: 0.2),
+                              ? _getIncomeColor(context).withValues(alpha: 0.2)
+                              : _getExpenseColor(
+                                context,
+                              ).withValues(alpha: 0.2),
                       child: Icon(
                         t.type == 'Income'
                             ? Icons.arrow_downward
                             : Icons.arrow_upward,
-                        color: t.type == 'Income' ? Colors.green : Colors.red,
+                        color:
+                            t.type == 'Income'
+                                ? _getIncomeColor(context)
+                                : _getExpenseColor(context),
                       ),
                     ),
                     title: Text(
@@ -610,7 +647,10 @@ User Question: $question
                       '${t.type == 'Income' ? '+' : '-'}\$${t.amount.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: t.type == 'Income' ? Colors.green : Colors.red,
+                        color:
+                            t.type == 'Income'
+                                ? _getIncomeColor(context)
+                                : _getExpenseColor(context),
                         fontSize: 16,
                       ),
                     ),
@@ -623,21 +663,353 @@ User Question: $question
     );
   }
 
+  // Time period for transaction charts
+  String _selectedTimePeriod = 'Daily';
+
+  // Helper methods to get theme-aware colors
+  Color _getIncomeColor(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? Colors.grey[300]!
+        : Colors.green;
+  }
+
+  Color _getExpenseColor(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? Colors.grey[600]!
+        : Colors.red;
+  }
+
+  // Get daily transactions for the last 7 days
+  Map<String, Map<String, double>> _getDailyTransactions() {
+    final now = DateTime.now();
+    final Map<String, Map<String, double>> dailyData = {};
+
+    for (int i = 6; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i));
+      final dateKey = DateFormat('MMM dd').format(date);
+      dailyData[dateKey] = {'income': 0.0, 'expense': 0.0};
+    }
+
+    for (var transaction in _transactions) {
+      final daysDiff = now.difference(transaction.date).inDays;
+      if (daysDiff >= 0 && daysDiff < 7) {
+        final dateKey = DateFormat('MMM dd').format(transaction.date);
+        if (dailyData.containsKey(dateKey)) {
+          if (transaction.type == 'Income') {
+            dailyData[dateKey]!['income'] =
+                (dailyData[dateKey]!['income'] ?? 0) + transaction.amount;
+          } else {
+            dailyData[dateKey]!['expense'] =
+                (dailyData[dateKey]!['expense'] ?? 0) + transaction.amount;
+          }
+        }
+      }
+    }
+
+    return dailyData;
+  }
+
+  // Get weekly transactions for the last 4 weeks
+  Map<String, Map<String, double>> _getWeeklyTransactions() {
+    final now = DateTime.now();
+    final Map<String, Map<String, double>> weeklyData = {};
+
+    for (int i = 3; i >= 0; i--) {
+      final weekStart = now.subtract(Duration(days: now.weekday - 1 + (i * 7)));
+      final weekKey = 'Week ${4 - i}';
+      weeklyData[weekKey] = {'income': 0.0, 'expense': 0.0};
+
+      for (var transaction in _transactions) {
+        final transactionWeekStart = transaction.date.subtract(
+          Duration(days: transaction.date.weekday - 1),
+        );
+        if (transactionWeekStart.year == weekStart.year &&
+            transactionWeekStart.month == weekStart.month &&
+            transactionWeekStart.day == weekStart.day) {
+          if (transaction.type == 'Income') {
+            weeklyData[weekKey]!['income'] =
+                (weeklyData[weekKey]!['income'] ?? 0) + transaction.amount;
+          } else {
+            weeklyData[weekKey]!['expense'] =
+                (weeklyData[weekKey]!['expense'] ?? 0) + transaction.amount;
+          }
+        }
+      }
+    }
+
+    return weeklyData;
+  }
+
+  // Get monthly transactions for the last 6 months
+  Map<String, Map<String, double>> _getMonthlyTransactions() {
+    final now = DateTime.now();
+    final Map<String, Map<String, double>> monthlyData = {};
+
+    for (int i = 5; i >= 0; i--) {
+      final month = DateTime(now.year, now.month - i, 1);
+      final monthKey = DateFormat('MMM').format(month);
+      monthlyData[monthKey] = {'income': 0.0, 'expense': 0.0};
+    }
+
+    for (var transaction in _transactions) {
+      final monthKey = DateFormat('MMM').format(transaction.date);
+      final monthsDiff =
+          (now.year - transaction.date.year) * 12 +
+          (now.month - transaction.date.month);
+
+      if (monthsDiff >= 0 &&
+          monthsDiff < 6 &&
+          monthlyData.containsKey(monthKey)) {
+        if (transaction.type == 'Income') {
+          monthlyData[monthKey]!['income'] =
+              (monthlyData[monthKey]!['income'] ?? 0) + transaction.amount;
+        } else {
+          monthlyData[monthKey]!['expense'] =
+              (monthlyData[monthKey]!['expense'] ?? 0) + transaction.amount;
+        }
+      }
+    }
+
+    return monthlyData;
+  }
+
+  // Build transaction bar chart
+  Widget _buildTransactionBarChart(Map<String, Map<String, double>> data) {
+    if (data.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text('No transaction data available'),
+        ),
+      );
+    }
+
+    final maxY = data.values.fold<double>(
+      0,
+      (max, entry) => [
+        max,
+        entry['income'] ?? 0,
+        entry['expense'] ?? 0,
+      ].reduce((a, b) => a > b ? a : b),
+    );
+
+    return SizedBox(
+      height: 300,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16.0, right: 16.0),
+        child: BarChart(
+          BarChartData(
+            alignment: BarChartAlignment.spaceAround,
+            maxY: maxY > 0 ? maxY * 1.2 : 100,
+            barTouchData: BarTouchData(
+              enabled: true,
+              touchTooltipData: BarTouchTooltipData(
+                getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                  final label = rodIndex == 0 ? 'Income' : 'Expense';
+                  return BarTooltipItem(
+                    '$label\n\$${rod.toY.toStringAsFixed(2)}',
+                    const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  );
+                },
+              ),
+            ),
+            titlesData: FlTitlesData(
+              show: true,
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 30,
+                  getTitlesWidget: (value, meta) {
+                    final index = value.toInt();
+                    if (index >= 0 && index < data.keys.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          data.keys.elementAt(index),
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      );
+                    }
+                    return const Text('');
+                  },
+                ),
+              ),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 40,
+                  getTitlesWidget: (value, meta) {
+                    return Text(
+                      '\$${value.toInt()}',
+                      style: const TextStyle(fontSize: 10),
+                    );
+                  },
+                ),
+              ),
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+            ),
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              horizontalInterval: maxY > 0 ? maxY / 5 : 20,
+            ),
+            borderData: FlBorderData(show: false),
+            barGroups:
+                data.entries.toList().asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final dataEntry = entry.value;
+                  final income = dataEntry.value['income'] ?? 0;
+                  final expense = dataEntry.value['expense'] ?? 0;
+
+                  return BarChartGroupData(
+                    x: index,
+                    barRods: [
+                      BarChartRodData(
+                        toY: income,
+                        color:
+                            Theme.of(context).brightness == Brightness.dark
+                                ? Colors.grey[300]!
+                                : Colors.green,
+                        width: 12,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(4),
+                          topRight: Radius.circular(4),
+                        ),
+                      ),
+                      BarChartRodData(
+                        toY: expense,
+                        color:
+                            Theme.of(context).brightness == Brightness.dark
+                                ? Colors.grey[600]!
+                                : Colors.red,
+                        width: 12,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(4),
+                          topRight: Radius.circular(4),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVisualizationTab() {
     final expenses = _expensesByCategory;
     final totalExpense = _totalExpense;
 
+    // Get chart data based on selected time period
+    Map<String, Map<String, double>> chartData;
+    switch (_selectedTimePeriod) {
+      case 'Weekly':
+        chartData = _getWeeklyTransactions();
+        break;
+      case 'Monthly':
+        chartData = _getMonthlyTransactions();
+        break;
+      case 'Daily':
+      default:
+        chartData = _getDailyTransactions();
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const Text(
+            'Transaction Trends',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          // Time period selector
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'Daily',
+                label: Text('Daily'),
+                icon: Icon(Icons.today, size: 16),
+              ),
+              ButtonSegment(
+                value: 'Weekly',
+                label: Text('Weekly'),
+                icon: Icon(Icons.view_week, size: 16),
+              ),
+              ButtonSegment(
+                value: 'Monthly',
+                label: Text('Monthly'),
+                icon: Icon(Icons.calendar_month, size: 16),
+              ),
+            ],
+            selected: {_selectedTimePeriod},
+            onSelectionChanged: (Set<String> newSelection) {
+              setState(() {
+                _selectedTimePeriod = newSelection.first;
+              });
+            },
+          ),
+          const SizedBox(height: 16),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              side: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  _buildTransactionBarChart(chartData),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: _getIncomeColor(context),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Income'),
+                      const SizedBox(width: 24),
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: _getExpenseColor(context),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Expense'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
           Row(
             children: [
               Expanded(
                 child: _buildSummaryCard(
                   'Income',
                   _totalIncome,
-                  Colors.green,
+                  _getIncomeColor(context),
                   Icons.arrow_downward,
                 ),
               ),
@@ -646,7 +1018,7 @@ User Question: $question
                 child: _buildSummaryCard(
                   'Expense',
                   _totalExpense,
-                  Colors.red,
+                  _getExpenseColor(context),
                   Icons.arrow_upward,
                 ),
               ),
@@ -750,7 +1122,10 @@ User Question: $question
               Text(
                 title,
                 style: TextStyle(
-                  color: Colors.grey[600],
+                  color:
+                      Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[400]
+                          : Colors.grey[600],
                   fontWeight: FontWeight.w500,
                 ),
               ),
